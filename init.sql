@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS exam_papers (
     UNIQUE KEY `unique_paper_year` (code, academic_year)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
 CREATE TABLE IF NOT EXISTS questions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     paper_id INT,
@@ -16,10 +17,12 @@ CREATE TABLE IF NOT EXISTS questions (
     question_content TEXT NOT NULL,
     options JSON,
     correct_answer CHAR(1),
+    AI_answer CHAR(1),
     prompt TEXT,
     answer_explanation TEXT,
     difficulty_level VARCHAR(50),
-    image_urls JSON, -- Thêm để lưu link ảnh đồ thị/hình học
+    category ENUM('Hình học', 'Đại số') NOT NULL DEFAULT 'Đại số',
+    image_urls JSON, 
     FOREIGN KEY (paper_id) REFERENCES exam_papers(id) ON DELETE CASCADE,
     UNIQUE KEY `unique_question_per_paper` (paper_id, question_number)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

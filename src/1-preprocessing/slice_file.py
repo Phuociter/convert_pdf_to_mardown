@@ -8,7 +8,6 @@ def slice_pdf(input_path, output_path, start_page, end_page):
         reader = PyPDF2.PdfReader(infile)
         writer = PyPDF2.PdfWriter()
 
-        # Lưu ý: PyPDF2 đếm trang từ 0, nên cần trừ đi 1
         for i in range(start_page - 1, end_page):
             if i < len(reader.pages):
                 writer.add_page(reader.pages[i])
@@ -16,7 +15,14 @@ def slice_pdf(input_path, output_path, start_page, end_page):
         with open(output_path, "wb") as outfile:
             writer.write(outfile)
 
-# Ví dụ: Lấy từ trang 1 đến trang 5
-slice_pdf("./data/raw/2021/2021.pdf", "./data/slice_file/2021/101.pdf", 1, 6)
+slice_pdf("./data/raw/2018/2018.pdf", "./data/slice_file/2018/101.pdf", 1, 6)
+slice_pdf("./data/raw/2018/2018.pdf", "./data/slice_file/2018/102.pdf", 6, 11)
+slice_pdf("./data/raw/2018/2018.pdf", "./data/slice_file/2018/103.pdf", 11, 16)
+slice_pdf("./data/raw/2018/2018.pdf", "./data/slice_file/2018/104.pdf", 16, 21)
+
+slice_pdf("./data/raw/2019/2019.pdf", "./data/slice_file/2019/101.pdf", 1, 6)
+slice_pdf("./data/raw/2019/2019.pdf", "./data/slice_file/2019/102.pdf", 6, 11)
+slice_pdf("./data/raw/2019/2019.pdf", "./data/slice_file/2019/103.pdf", 11, 16)
+slice_pdf("./data/raw/2019/2019.pdf", "./data/slice_file/2019/104.pdf", 16, 21)
 
 print("Đã cắt file thành công!")

@@ -9,54 +9,83 @@ from sqlalchemy import create_engine, text
 DB_CONFIG = "mysql+pymysql://root:admin@127.0.0.1:3306/exam_db"
 engine = create_engine(DB_CONFIG)
 
-def parse_questions_from_md(file_path, paper_id):
+def load_all_results(base_path):
+    """Quét và đọc tất cả các file result.csv trong thư mục processed."""
+    results_map = {}
+    # Tìm tất cả file csv có tên result.csv (hoặc .cdv nếu có)
+    csv_files = glob.glob(os.path.join(base_path, "**/result.csv"), recursive=True)
+    csv_files += glob.glob(os.path.join(base_path, "**/result.cdv"), recursive=True)
+    
+    if not csv_files:
+        print("  [?] Không tìm thấy bất kỳ file result.csv nào.")
+        return results_map
+
+    print(f"--- Đã tìm thấy {len(csv_files)} file CSV đáp án. ---")
+    for csv_path in csv_files:
+        try:
+            # Lấy năm từ tên thư mục cha (ví dụ: data/processed/2018/result.csv)
+            year = os.path.basename(os.path.dirname(csv_path))
+            df_res = pd.read_csv(csv_path)
+            
+            # Chuẩn hóa tên cột
+            df_res.columns = [c.lower().strip() for c in df_res.columns]
+            
+            # Lưu vào map với key là (năm, mã_đề, số_câu)
+            for _, row in df_res.iterrows():
+                key = (str(year), str(row['ma_de']), int(row['cau_hoi']))
+                results_map[key] = str(row['dap_an']).strip()
+        except Exception as e:
+            print(f"  [!] Lỗi khi đọc file CSV {csv_path}: {e}")
+            
+    return results_map
+
+def parse_questions_from_md(file_path, paper_id, year, code, results_map):
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # 1. Chuẩn hóa nội dung: Xóa dấu cách thừa, chuẩn hóa dấu xuống dòng
         content = content.replace('\r\n', '\n')
         
-        # 2. Regex mới: 
-        # - Chấp nhận cả "Câu 1:" và "Câu 1."
-        # - (?i) để không phân biệt chữ hoa chữ thường
-        # - Dùng thực thể lười (.*?) để bắt nội dung
+        # Regex bắt khối câu hỏi
         q_pattern = r"(Câu\s+\d+[\s:.]+.*?)(?=Câu\s+\d+[\s:.]|$)"
         q_blocks = re.findall(q_pattern, content, re.DOTALL | re.IGNORECASE)
         
         parsed_questions = []
         for block in q_blocks:
-            # Lấy số câu chính xác hơn
             num_match = re.search(r"Câu\s+(\d+)", block, re.IGNORECASE)
             if not num_match: continue
             q_num = int(num_match.group(1))
 
-            # Tách nội dung và options (Xử lý trường hợp A. B. C. D. dính liền hoặc xuống dòng)
-            # Regex này tìm chữ cái [A-D] đứng sau là dấu chấm và khoảng trắng
-            parts = re.split(r"\n\s*([A-D]\.)|(?<=\s)([A-D]\.)", block)
-            # Lọc bỏ các phần None do split sinh ra
-            parts = [p for p in parts if p is not None]
-            
-            q_content_raw = parts[0]
-            q_content = re.sub(r"Câu\s+\d+[\s:.]+", "", q_content_raw).strip()
+            # Tách đề bài và options
+            opt_start_match = re.search(r"\n\s*A\.|(?<=\s)A\.", block)
+            if opt_start_match:
+                q_content_raw = block[:opt_start_match.start()]
+                options_part = block[opt_start_match.start():]
+            else:
+                q_content_raw = block
+                options_part = ""
+
+            q_content = re.sub(r"^Câu\s+\d+[\s:.]+", "", q_content_raw).strip()
 
             options_dict = {}
-            # Logic bắt cặp label và value từ mảng parts
-            # (Phần này cần cẩn thận vì split split theo 2 pattern)
-            # Cách an toàn hơn để lấy Options:
             opt_pattern = r"([A-D])\.\s*(.*?)(?=[A-D]\.|$|\n\n)"
-            options_matches = re.findall(opt_pattern, block, re.DOTALL)
+            options_matches = re.findall(opt_pattern, options_part, re.DOTALL)
             options_dict = {label.strip(): value.strip() for label, value in options_matches}
 
             images = re.findall(r"!\[.*?\]\((.*?)\)", block)
+
+            # Tra cứu đáp án từ results_map
+            correct_answer = results_map.get((str(year), str(code), q_num))
 
             parsed_questions.append({
                 "paper_id": paper_id,
                 "question_number": q_num,
                 "question_content": q_content,
                 "options": json.dumps(options_dict, ensure_ascii=False) if options_dict else None,
+                "category": 'Đại số',
                 "image_urls": json.dumps(images) if images else None,
-                "correct_answer": None,
+                "correct_answer": correct_answer,
+                "AI_answer": None,
                 "difficulty_level": None
             })
         return parsed_questions
@@ -65,25 +94,26 @@ def parse_questions_from_md(file_path, paper_id):
         return []
 
 def main():
-    # 1. Lấy thông tin các đề thi đã nạp trong DB để ánh xạ ID
+    # 1. Khởi tạo đường dẫn và nạp đáp án trước
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    base_path = os.path.abspath(os.path.join(current_dir, "../../data/processed"))
+    
+    results_map = load_all_results(base_path)
+
+    # 2. Lấy thông tin các đề thi đã nạp trong DB
     with engine.connect() as conn:
         query = text("SELECT id, code, academic_year FROM exam_papers")
         existing_papers = conn.execute(query).fetchall()
     
-    # Tạo dictionary để tra cứu nhanh: {(năm, mã_đề): id}
     paper_map = {(str(p.academic_year), str(p.code)): p.id for p in existing_papers}
 
-    # 2. Tìm tất cả file .md trong thư mục processed
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    base_path = os.path.abspath(os.path.join(current_dir, "../../data/processed"))
+    # 3. Tìm tất cả file .md
     file_list = glob.glob(os.path.join(base_path, "**/*.md"), recursive=True)
 
-    print(f"--- Tìm thấy {len(file_list)} file Markdown. Bắt đầu xử lý... ---")
+    print(f"--- Tìm thấy {len(file_list)} file Markdown. Bắt lời xử lý... ---")
 
     total_inserted = 0
     for file_path in file_list:
-        # Trích xuất Năm và Mã đề từ đường dẫn file để tra cứu paper_id
-        # Cấu trúc: .../processed/2018/101/101.md
         path_parts = os.path.normpath(file_path).split(os.sep)
         year = path_parts[-3]
         code = path_parts[-2]
@@ -92,17 +122,16 @@ def main():
 
         if paper_id:
             print(f"[*] Đang xử lý Đề {code} - Năm {year} (ID: {paper_id})")
-            questions = parse_questions_from_md(file_path, paper_id)
+            questions = parse_questions_from_md(file_path, paper_id, year, code, results_map)
             
             if questions:
                 df = pd.DataFrame(questions)
                 try:
-                    # Nạp vào DB, bỏ qua nếu trùng (do Unique Key)
                     df.to_sql('questions', con=engine, if_exists='append', index=False)
                     total_inserted += len(questions)
                     print(f"  [+] Đã nạp {len(questions)} câu.")
                 except Exception as e:
-                    print(f"  [!] Lỗi nạp DB cho đề {code}: Trùng dữ liệu hoặc lỗi SQL.")
+                    print(f"  [!] Lỗi nạp DB cho đề {code}: {e}")
         else:
             print(f"  [?] Bỏ qua: Đề {code}/{year} chưa có trong bảng exam_papers.")
 

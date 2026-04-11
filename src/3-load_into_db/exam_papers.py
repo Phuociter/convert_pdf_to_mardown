@@ -31,7 +31,7 @@ def extract_exam_info(file_path):
         return {
             "code": paper_code,
             "academic_year": exam_year,
-            "total_questions": 50 # Giá trị mặc định cho đề THPT
+            "total_questions": 50
         }
     except Exception as e:
         print(f"Error reading {file_path}: {e}")
@@ -40,12 +40,11 @@ def extract_exam_info(file_path):
 def load_to_mysql(df):
     """Kết nối và nạp DataFrame vào MySQL."""
     try:
-        # Tạo connection engine
+        # Tạo connection
         conn_str = f"mysql+pymysql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
         engine = create_engine(conn_str)
 
         # Nạp dữ liệu vào bảng exam_papers
-        # if_exists='append': Thêm dữ liệu mới vào bảng đã có
         df.to_sql('exam_papers', con=engine, if_exists='append', index=False)
         print("Successfully loaded data to MySQL.")
     except Exception as e:
