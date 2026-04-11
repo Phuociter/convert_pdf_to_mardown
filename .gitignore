@@ -1,0 +1,14 @@
+# Bỏ qua dữ liệu MySQL của Docker
+data/mysql/
+
+# Bỏ qua môi trường ảo Python
+venv/
+.venv/
+__pycache__/
+
+# Bỏ qua các file cấu hình nhạy cảm
+.env
+
+# Bỏ qua các file log hoặc file tạm của hệ thống
+*.log
+.DS_Store
